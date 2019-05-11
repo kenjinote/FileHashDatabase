@@ -490,6 +490,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			ShowWindow(hButton2, SW_HIDE);
 			EnableWindow(hEdit1, FALSE);
 			EnableWindow(hEdit2, FALSE);
+			SetWindowText(hEdit2, 0);
 			DWORD dwParam;
 			tdata.hWnd = hWnd;
 			tdata.hEdit = hEdit2;
