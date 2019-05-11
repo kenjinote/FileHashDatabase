@@ -98,6 +98,17 @@ BOOL CalcFileHash(LPCTSTR lpszFilePath, ALG_ID Algid, LPTSTR lpszHashValue)
 	{
 		return FALSE;
 	}
+	LARGE_INTEGER filesize = { 0 };
+	if (!GetFileSizeEx(hFile, &filesize))
+	{
+		CloseHandle(hFile);
+		return FALSE;
+	}
+	if (filesize.QuadPart == 0LL)
+	{
+		CloseHandle(hFile);
+		return FALSE;
+	}
 	HCRYPTPROV hProv = 0;
 	if (!CryptAcquireContext(&hProv, 0, 0, PROV_RSA_AES, CRYPT_VERIFYCONTEXT | CRYPT_MACHINE_KEYSET))
 	{
@@ -315,6 +326,23 @@ BOOL InsertDatabase(_ConnectionPtr pCon, LPWSTR lpszHash, LPWSTR lpszFilePath, H
 	return bRet;
 }
 
+LONGLONG GetFileSize(LPCTSTR lpszFilePath)
+{
+	HANDLE hFile = CreateFile(lpszFilePath, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+	if (hFile == INVALID_HANDLE_VALUE)
+	{
+		return -1LL;
+	}
+	LARGE_INTEGER filesize = { 0 };
+	if (!GetFileSizeEx(hFile, &filesize))
+	{
+		CloseHandle(hFile);
+		return -1LL;
+	}
+	CloseHandle(hFile);
+	return filesize.QuadPart;
+}
+
 DWORD WINAPI ThreadFunc(LPVOID p)
 {
 	THREAD_DATA* tdata = (THREAD_DATA*)p;
@@ -380,14 +408,29 @@ DWORD WINAPI ThreadFunc(LPVOID p)
 				if (PathFileExists(szFileName) && !PathIsDirectory(szFileName))
 				{
 					TCHAR szHash[256] = { 0 };
-					if (CalcFileHash(szFileName, CALG_SHA_256, szHash))
+					if (GetFileSize(szFileName) == 0LL)
+					{
+						AddEditBox(tdata->hEdit, fd.cFileName);
+						if (DeleteFile(szFileName))
+						{
+							AddEditBox(tdata->hEdit, TEXT("を削除しました。(内容が0バイトのため)\r\n"));
+						}
+						else
+						{
+							AddEditBox(tdata->hEdit, TEXT("の削除に失敗しました。\r\n"));
+							tdata->bAbort = TRUE;
+						}
+					}
+					else if (CalcFileHash(szFileName, CALG_SHA_256, szHash))
 					{
 						if (IsRegisterDatabase(pCon, szHash, tdata->hEdit))
 						{
 							AddEditBox(tdata->hEdit, fd.cFileName);
 							if (DeleteFile(szFileName))
 							{
-								AddEditBox(tdata->hEdit, TEXT("を削除しました。\r\n"));
+								TCHAR szText[1024];
+								wsprintf(szText, TEXT("を削除しました。(ハッシュ値:%s)\r\n"), szHash);
+								AddEditBox(tdata->hEdit, szText);
 							}
 							else
 							{
@@ -434,7 +477,6 @@ DWORD WINAPI ThreadFunc(LPVOID p)
 			FindClose(hSearch);
 		}
 	}
-	// DBを閉じる
 	pCon->Close();
 	pCon = NULL;
 	CompactDatabase(szDatabasePath);
@@ -463,6 +505,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	static UINT uDpiX = DEFAULT_DPI, uDpiY = DEFAULT_DPI;
 	static HFONT hFont;
 	static HANDLE hThread;
+	static BOOL bApplicationExit;
 	switch (msg)
 	{
 	case WM_CREATE:
@@ -533,18 +576,47 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			}
 		}
 		break;
+	case WM_CLOSE:
+		if (hThread)
+		{
+			if (IDOK == MessageBox(hWnd, TEXT("処理を中断しますか？"), TEXT("確認"), MB_OKCANCEL))
+			{
+				if (hThread)
+				{
+					bApplicationExit = TRUE;
+					tdata.bAbort = TRUE;
+				}
+				else
+				{
+					DestroyWindow(hWnd);
+				}
+			}
+			break;
+		}
+		else
+		{
+			DestroyWindow(hWnd);
+		}
+		break;
 	case WM_APP:
 		WaitForSingleObject(hThread, INFINITE);
 		CloseHandle(hThread);
 		hThread = 0;
-		EnableWindow(hButton1, TRUE);
-		EnableWindow(hButton2, TRUE);
-		ShowWindow(hButton2, SW_SHOW);
-		ShowWindow(hButton3, SW_HIDE);
-		EnableWindow(hButton3, FALSE);
-		EnableWindow(hEdit1, TRUE);
-		EnableWindow(hEdit2, TRUE);
-		SetFocus(hEdit1);
+		if (bApplicationExit)
+		{
+			DestroyWindow(hWnd);
+		}
+		else
+		{
+			EnableWindow(hButton1, TRUE);
+			EnableWindow(hButton2, TRUE);
+			ShowWindow(hButton2, SW_SHOW);
+			ShowWindow(hButton3, SW_HIDE);
+			EnableWindow(hButton3, FALSE);
+			EnableWindow(hEdit1, TRUE);
+			EnableWindow(hEdit2, TRUE);
+			SetFocus(hEdit1);
+		}
 		break;
 	case WM_NCCREATE:
 		{
