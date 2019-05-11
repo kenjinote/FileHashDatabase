@@ -115,7 +115,7 @@ BOOL CalcFileHash(LPCTSTR lpszFilePath, ALG_ID Algid, LPTSTR lpszHashValue)
 	static BYTE Buffer[64 * 1024];
 	for (;;)
 	{
-		DWORD wReadSize;
+		DWORD wReadSize = 0;
 		if (ReadFile(hFile, Buffer, sizeof(Buffer), &wReadSize, 0) == FALSE)
 			break;
 		if (!wReadSize)
@@ -265,8 +265,8 @@ BOOL IsRegisterDatabase(_ConnectionPtr pCon, LPWSTR lpszHash, HWND hEdit)
 		pRecordset.CreateInstance(__uuidof(Recordset));
 		TCHAR szSQL[1024];
 		wsprintf(szSQL, TEXT("SELECT * FROM ファイルハッシュ WHERE ハッシュ値 = '%s';"), lpszHash);
-		pRecordset->Open(szSQL, pCon->ConnectionString, adOpenForwardOnly, adLockReadOnly, adCmdUnknown);
-		if (!pRecordset->EndOfFile)
+		pRecordset->Open(szSQL, pCon->ConnectionString, adOpenStatic, adLockReadOnly, adCmdUnknown);
+		if (pRecordset->RecordCount >= 1)
 		{
 			bRet = TRUE;
 		}
@@ -291,6 +291,7 @@ BOOL InsertDatabase(_ConnectionPtr pCon, LPWSTR lpszHash, LPWSTR lpszFilePath, H
 		return FALSE;
 	}
 	BOOL bRet = FALSE;
+	pCon->BeginTrans();
 	try
 	{
 		TCHAR szSQL[1024];
@@ -310,13 +311,13 @@ BOOL InsertDatabase(_ConnectionPtr pCon, LPWSTR lpszHash, LPWSTR lpszFilePath, H
 		AddEditBox(hEdit, e.Description());
 		AddEditBox(hEdit, TEXT("\r\n"));
 	}
+	pCon->CommitTrans();
 	return bRet;
 }
 
 DWORD WINAPI ThreadFunc(LPVOID p)
 {
 	THREAD_DATA* tdata = (THREAD_DATA*)p;
-
 	if (!PathIsDirectory(tdata->szDirectory))
 	{
 		AddEditBox(tdata->hEdit, TEXT("入力パスがディレクトリではありません。\r\n"));
