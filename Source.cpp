@@ -85,6 +85,7 @@ typedef struct {
 	HWND hEdit;
 	HWND hStatic;
 	WCHAR szDirectory[MAX_PATH];
+	BOOL bSubFolder;
 	BOOL bAbort;
 } THREAD_DATA;
 
@@ -326,23 +327,6 @@ BOOL InsertDatabase(_ConnectionPtr pCon, LPWSTR lpszHash, LPWSTR lpszFilePath, H
 	return bRet;
 }
 
-LONGLONG GetFileSize(LPCTSTR lpszFilePath)
-{
-	HANDLE hFile = CreateFile(lpszFilePath, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
-	if (hFile == INVALID_HANDLE_VALUE)
-	{
-		return -1LL;
-	}
-	LARGE_INTEGER filesize = { 0 };
-	if (!GetFileSizeEx(hFile, &filesize))
-	{
-		CloseHandle(hFile);
-		return -1LL;
-	}
-	CloseHandle(hFile);
-	return filesize.QuadPart;
-}
-
 DWORD WINAPI ThreadFunc(LPVOID p)
 {
 	THREAD_DATA* tdata = (THREAD_DATA*)p;
@@ -394,7 +378,7 @@ DWORD WINAPI ThreadFunc(LPVOID p)
 		}
 	}
 	{
-		WIN32_FIND_DATA fd;
+		WIN32_FIND_DATA fd = { 0 };
 		TCHAR szFileName[MAX_PATH + 10];
 		lstrcpy(szFileName, tdata->szDirectory);
 		PathAppend(szFileName, TEXT("*.*"));
@@ -408,7 +392,7 @@ DWORD WINAPI ThreadFunc(LPVOID p)
 				if (PathFileExists(szFileName) && !PathIsDirectory(szFileName))
 				{
 					TCHAR szHash[256] = { 0 };
-					if (GetFileSize(szFileName) == 0LL)
+					if (fd.nFileSizeLow == 0 && fd.nFileSizeHigh == 0)
 					{
 						AddEditBox(tdata->hEdit, fd.cFileName);
 						if (DeleteFile(szFileName))
@@ -502,6 +486,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	static HWND hStatic;
 	static HWND hButton1, hButton2, hButton3;
 	static HWND hEdit1, hEdit2;
+	static HWND hCheck1;
 	static UINT uDpiX = DEFAULT_DPI, uDpiY = DEFAULT_DPI;
 	static HFONT hFont;
 	static HANDLE hThread;
@@ -514,6 +499,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		hButton1 = CreateWindow(TEXT("BUTTON"), TEXT("..."), WS_VISIBLE | WS_CHILD, 0, 0, 0, 0, hWnd, (HMENU)1000, ((LPCREATESTRUCT)lParam)->hInstance, 0);
 		hButton2 = CreateWindow(TEXT("BUTTON"), TEXT("実行"), WS_VISIBLE | WS_CHILD, 0, 0, 0, 0, hWnd, (HMENU)IDOK, ((LPCREATESTRUCT)lParam)->hInstance, 0);
 		hButton3 = CreateWindow(TEXT("BUTTON"), TEXT("停止"), WS_DISABLED | WS_CHILD, 0, 0, 0, 0, hWnd, (HMENU)IDCANCEL, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		hCheck1 = CreateWindow(TEXT("BUTTON"), TEXT("サブフォルダも対象"), WS_VISIBLE | WS_CHILD | BS_AUTOCHECKBOX, 0, 0, 0, 0, hWnd, (HMENU)1001, ((LPCREATESTRUCT)lParam)->hInstance, 0);
 		hEdit2 = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), 0, WS_VISIBLE | WS_CHILD | WS_VSCROLL | ES_MULTILINE | ES_AUTOHSCROLL | ES_AUTOVSCROLL | ES_READONLY, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
 		SendMessage(hEdit2, EM_LIMITTEXT, 0, 0);
 		SendMessage(hWnd, WM_DPICHANGED, 0, 0);
@@ -524,6 +510,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		MoveWindow(hButton1, LOWORD(lParam) - POINT2PIXEL(42), POINT2PIXEL(50), POINT2PIXEL(32), POINT2PIXEL(32), TRUE);
 		MoveWindow(hButton2, POINT2PIXEL(10), POINT2PIXEL(90), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
 		MoveWindow(hButton3, POINT2PIXEL(10), POINT2PIXEL(90), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
+		MoveWindow(hCheck1, POINT2PIXEL(256 + 20), POINT2PIXEL(90), POINT2PIXEL(128), POINT2PIXEL(32), TRUE);
 		MoveWindow(hEdit2, POINT2PIXEL(10), POINT2PIXEL(130), LOWORD(lParam) - POINT2PIXEL(20), HIWORD(lParam) - POINT2PIXEL(140), TRUE);
 		break;
 	case WM_COMMAND:
@@ -532,6 +519,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			EnableWindow(hButton1, FALSE);
 			EnableWindow(hButton2, FALSE);
 			ShowWindow(hButton2, SW_HIDE);
+			EnableWindow(hCheck1, FALSE);
 			EnableWindow(hEdit1, FALSE);
 			EnableWindow(hEdit2, FALSE);
 			SetWindowText(hEdit2, 0);
@@ -539,6 +527,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			tdata.hWnd = hWnd;
 			tdata.hEdit = hEdit2;
 			tdata.hStatic = hStatic;
+			tdata.bSubFolder = (BOOL)SendMessage(hCheck1, BM_GETCHECK, 0, 0);
 			tdata.bAbort = FALSE;
 			GetWindowText(hEdit1, tdata.szDirectory, _countof(tdata.szDirectory));
 			hThread = CreateThread(0, 0, ThreadFunc, (LPVOID)&tdata, 0, &dwParam);
@@ -613,6 +602,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			ShowWindow(hButton2, SW_SHOW);
 			ShowWindow(hButton3, SW_HIDE);
 			EnableWindow(hButton3, FALSE);
+			EnableWindow(hCheck1, TRUE);
 			EnableWindow(hEdit1, TRUE);
 			EnableWindow(hEdit2, TRUE);
 			SetFocus(hEdit1);
@@ -640,6 +630,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		SendMessage(hButton1, WM_SETFONT, (WPARAM)hFont, 0);
 		SendMessage(hButton2, WM_SETFONT, (WPARAM)hFont, 0);
 		SendMessage(hButton3, WM_SETFONT, (WPARAM)hFont, 0);
+		SendMessage(hCheck1, WM_SETFONT, (WPARAM)hFont, 0);
 		SendMessage(hEdit1, WM_SETFONT, (WPARAM)hFont, 0);
 		SendMessage(hEdit2, WM_SETFONT, (WPARAM)hFont, 0);
 		break;
