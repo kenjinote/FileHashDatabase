@@ -639,6 +639,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		SendMessage(hStatic, WM_SETFONT, (WPARAM)hFont, 0);
 		SendMessage(hButton1, WM_SETFONT, (WPARAM)hFont, 0);
 		SendMessage(hButton2, WM_SETFONT, (WPARAM)hFont, 0);
+		SendMessage(hButton3, WM_SETFONT, (WPARAM)hFont, 0);
 		SendMessage(hEdit1, WM_SETFONT, (WPARAM)hFont, 0);
 		SendMessage(hEdit2, WM_SETFONT, (WPARAM)hFont, 0);
 		break;
